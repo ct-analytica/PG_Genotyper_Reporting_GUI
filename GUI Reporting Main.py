@@ -57,5 +57,4 @@ while True:
             webbrowser.open('https://apps.thermofisher.com/alleletyper')
 
 window.close()
-print('test')
-print('creating new line')
+print('i think this is a pretty good test')
