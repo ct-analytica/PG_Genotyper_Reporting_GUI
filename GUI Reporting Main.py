@@ -1,5 +1,7 @@
 import PySimpleGUI as sg
 import webbrowser
+import webview
+import time
 import pandas as pd
 import sys
 
@@ -54,6 +56,6 @@ while True:
         if event == sg.WIN_CLOSED:
             break
         elif event == 'ThermoFisher':
-            webbrowser.open('https://apps.thermofisher.com/alleletyper')
-
+            webview.create_window('Thermofisher', 'https://apps.thermofisher.com/alleletyper')
+            webview.start()
 window.close()
