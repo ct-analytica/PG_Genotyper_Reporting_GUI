@@ -1,4 +1,3 @@
-.idea
 import PySimpleGUI as sg
 import webbrowser
 import pandas as pd
@@ -58,3 +57,5 @@ while True:
             webbrowser.open('https://apps.thermofisher.com/alleletyper')
 
 window.close()
+print('test')
+print('creating new line')
