@@ -49,7 +49,7 @@ def read_csv_file(filename):
                     sg.popup_error('Error In Reading File', e)
                     return None, None
         except:
-            with open (filename, encoding='utf-8-sig') as infile:
+            with open (filename, encoding='UTF-8') as infile:
                 reader = csv.reader(infile, delimiter=',')
                 header_list = next(reader)
                 try:
@@ -108,7 +108,7 @@ def csv_window(file_path):
                 [sg.Sizegrip()]]
 
     # ------ Create Window ------
-    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, finalize=True)
+    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, size=(800, 600), finalize=True)
     window.bind("<Control_L><End>", '-CONTROL END-')
     window.bind("<End>", '-CONTROL END-')
     window.bind("<Control_L><Home>", '-CONTROL HOME-')
