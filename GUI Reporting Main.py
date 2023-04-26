@@ -37,27 +37,21 @@ def sort_table(table, cols, descending=False):
 def read_csv_file(filename):
     data = []
     header_list = []
+    allele_cols = ['sample ID', 'CYP2D6', 'CYP2C9', 'CYP2C19', 'SLCO1B1', 'CYP2B6', 'CYP3A4', 'CYP3A5', 'VKORC1']
     if filename is not None:
         try:
-            with open(filename, encoding='UTF-16') as infile:
-                reader = csv.reader(infile, delimiter='\t')
+            with open(filename, 'r', newline='', encoding=None) as infile:
+                reader = csv.reader(infile)
+                for i in range(10):
+                    next(reader)  # skip the first 10 rows
                 header_list = next(reader)
-                try:
-                    data = list(reader)
-                except Exception as e:
-                    print(e)
-                    sg.popup_error('Error In Reading File', e)
-                    return None, None
-        except:
-            with open (filename, encoding='UTF-8') as infile:
-                reader = csv.reader(infile, delimiter=',')
-                header_list = next(reader)
-                try:
-                    data = list(reader)
-                except Exception as e:
-                    print(e)
-                    sg.popup_error('Error In Reading File', e)
-    return data, header_list
+                allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
+                data = [[row[i] for i in allele_indices] for row in reader]
+        except Exception as e:
+            print(e)
+            sg.popup_error('Error In Reading File', e)
+    return data, allele_cols
+
 
 ######################################################################################################################
 # Creating tabs
@@ -86,6 +80,8 @@ window = sg.Window('Reporting Tools', layout, resizable=True, finalize=True)
 
 ##################################################################################################################
 #Creating CSV Table Layout and function
+###ToDo: add button to do the conversion for the diplotype Calculator
+###ToDo: add button to save the edited work
 def csv_window(file_path):
     data, header_list = read_csv_file(file_path)
 
@@ -100,7 +96,7 @@ def csv_window(file_path):
                  sg.B('Reset Table', tooltip='Resets entire table to your original data'),
                  sg.Checkbox('Sort Descending', k='-DESCENDING-'), sg.Checkbox('Filter Out (exclude)', k='-FILTER OUT-', tooltip='Check to remove matching entries when filtering a column'), sg.Push()],
                 [sg.Table(values=data, headings=header_list, max_col_width=25,
-                        auto_size_columns=True, display_row_numbers=True, vertical_scroll_only=True,
+                        auto_size_columns=True, display_row_numbers=True, vertical_scroll_only=False,
                         justification='right', num_rows=50,
                         key='-TABLE-', selected_row_colors='red on yellow', enable_events=True,
                         expand_x=True, expand_y=True,
