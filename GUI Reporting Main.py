@@ -38,11 +38,11 @@ def read_csv_file(filename):
     data = []
     header_list = []
     allele_cols = ['sample ID', 'CYP2D6', 'CYP2C9', 'CYP2C19', 'SLCO1B1', 'CYP2B6', 'CYP3A4', 'CYP3A5', 'VKORC1']
-    if filename is not None:
+    if filename is not None and filename != '':
         try:
             with open(filename, 'r', newline='', encoding=None) as infile:
                 reader = csv.reader(infile)
-                for i in range(10):
+                for i in range(11):
                     next(reader)  # skip the first 10 rows
                 header_list = next(reader)
                 allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
@@ -51,7 +51,6 @@ def read_csv_file(filename):
             print(e)
             sg.popup_error('Error In Reading File', e)
     return data, allele_cols
-
 
 ######################################################################################################################
 # Creating tabs
@@ -62,6 +61,15 @@ tab_al_typ = [[sg.T('Proceed to Thermofishers Allele Typer', expand_x=True, expa
 tab_diplo = [[sg.T('Upload & View AlleleTyper Exports', expand_x=True, expand_y=True)],
              [sg.Push(), sg.InputText(key="-FILE_PATH-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=('CSV Files', '*.csv'))],
              [sg.Button('Submit', key='-SUBMIT-', button_color=('#000000', '#C2D4D8')), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
+
+### Callback function for the 'Submit' button on diplo tab
+def handle_submit(file_path):
+    csv_window(file_path)
+def submit_callback(values):
+    if values["-SUBMIT-"]:
+        file_path = values["-FILE_PATH-"]
+        handle_submit(file_path)
+
 
 tab_genx = [[sg.T('Convert files for Genxys upload', expand_x=True, expand_y=True)],
             [sg.Push(), sg.Button('Convert', size=(14, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
@@ -80,8 +88,6 @@ window = sg.Window('Reporting Tools', layout, resizable=True, finalize=True)
 
 ##################################################################################################################
 #Creating CSV Table Layout and function
-###ToDo: add button to do the conversion for the diplotype Calculator
-###ToDo: add button to save the edited work
 def csv_window(file_path):
     data, header_list = read_csv_file(file_path)
 
@@ -96,7 +102,7 @@ def csv_window(file_path):
                  sg.B('Reset Table', tooltip='Resets entire table to your original data'),
                  sg.Checkbox('Sort Descending', k='-DESCENDING-'), sg.Checkbox('Filter Out (exclude)', k='-FILTER OUT-', tooltip='Check to remove matching entries when filtering a column'), sg.Push()],
                 [sg.Table(values=data, headings=header_list, max_col_width=25,
-                        auto_size_columns=True, display_row_numbers=True, vertical_scroll_only=False,
+                        auto_size_columns=True, display_row_numbers=True, vertical_scroll_only=True,
                         justification='right', num_rows=50,
                         key='-TABLE-', selected_row_colors='red on yellow', enable_events=True,
                         expand_x=True, expand_y=True,
@@ -158,10 +164,7 @@ def csv_window(file_path):
     window.close()
 
 
-if __name__ == '__main__':
-    event, values = window.read()
-    file_path = values["-FILE_PATH-"]
-    csv_window(file_path)
+
 ###############################################################################################################
 
 #Event Loop
@@ -174,17 +177,17 @@ while True:
         ### Todo: Find a way to implement our own AlleleTyper script and gain independence/distance from Thermo's software
         webview.create_window('Thermofisher', 'https://apps.thermofisher.com/alleletyper')
         webview.start()
-
     elif event == '-SUBMIT-':
         event, values = window.read()
         file_path = values['-File_PATH-']
         csv_window(file_path)
-
     elif event == 'Cancel':
         sg.popup('Closing Program')
         exit()
 
+if __name__ == '__main__':
+    event, values = window.read()
+
 window.close()
 
         ###ToDo: Add code to convert diplotype calculator/alleletyper files for Genxys
-
