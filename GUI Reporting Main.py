@@ -4,20 +4,14 @@ import pandas as pd
 import csv
 import os
 import operator
-
+import tkinter as tk
+from tkinter import filedialog
+import tkinter.messagebox
 
 # Setting the theme
 sg.theme('Dark Blue')
 
-##################################################################################################################
-# Import CPIC dataframe from Google Cloud Storage
-# This will be used in diplotype calculator processes
-# Currently only supported for CYP2D6 and CYP2C9
-# ToDo: Create dataframe manipulation for the allele typer file import
-cpic_data = f'https://storage.googleapis.com/pg-genotyping-cpic-2d6-2d9/2d6_2d9_joined.csv'
-cpic_df = pd.read_csv(cpic_data)
-
-##################################################################################################################
+#############################################################################
 # Scripts for working with .CSVs
 # This will contain code for creating an interactive window to work with .csv's
 working_directory = os.getcwd()
@@ -33,19 +27,19 @@ def sort_table(table, cols, descending=False):
             sg.popup_error('Error in sorting the table', 'Exception in sorting the table', e)
     return table
 
-
+##################################################################################################################
+# CSV reader functions
 # This function interacts with the CSV once it is uploaded
 # When uploaded, it will trim the columns to only what is prevalent for reporting
 # Rows are skipped so that the header is missed in the alleletyper export file
 def read_csv_file(filename):
     data = []
-    header_list = []
-    allele_cols = ['sample ID', 'CYP2D6', 'CYP2C9', 'CYP2C19', 'SLCO1B1', 'CYP2B6', 'CYP3A4', 'CYP3A5', 'VKORC1']
+    allele_cols = ['sample ID', 'CYP2D6', 'CYP2C9', 'SLCO1B1', 'CYP2B6', 'CYP3A4', 'CYP3A5', 'VKORC1']
     if filename is not None and filename != '':
         try:
             with open(filename, 'r', newline='', encoding=None) as infile:
                 reader = csv.reader(infile)
-                for i in range(10):
+                for i in range(11):
                     next(reader)  # skip the first 10 rows
                 header_list = next(reader)
                 allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
@@ -54,7 +48,7 @@ def read_csv_file(filename):
             try:
                 with open(filename, 'r', newline='', encoding=None) as infile:
                     reader = csv.reader(infile)
-                    for i in range(11):
+                    for i in range(10):
                         next(reader)
                     header_list = next(reader)
                     allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
@@ -63,6 +57,26 @@ def read_csv_file(filename):
                 print(e)
                 sg.popup_error('Error In Reading File', e)
     return data, allele_cols
+
+#####################################################################################################################
+# This section is a function that can be used to save the dataframe at any given point
+
+def onClick(msg):
+    tkinter.messagebox.showinfo("Precision Genetics", msg)
+
+def save_loc(dataframe):
+    root = tk.Tk()
+    root.withdraw()
+    file_path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                             filetypes=[("CSV Files", "*.csv"),
+                                                        ("All Files", "*.*")])
+    if file_path:
+        try:
+            dataframe.to_csv(file_path, index=False, encoding='utf-8-sig')
+            onClick('File saved successfully')
+        except Exception as e:
+            onClick('An error occurred while saving the file: ' + str(e))
+    root.destroy()
 
 ######################################################################################################################
 # Creating tabs and callbacks for interactive functions
@@ -95,16 +109,64 @@ layout = [[sg.Stretch()],
 window = sg.Window('Reporting Tools', layout, resizable=True, finalize=True)
 
 ##################################################################################################################
-#Creating Diplotype Calculator Functions
-
-
-
-##################################################################################################################
 #Creating CSV Table Layout and function
-def csv_window(window, file_path):
+def csv_window(file_path):
     data, header_list = read_csv_file(file_path)
-
+    print(header_list)
     sg.popup_quick_message('Building your main window.... one moment....', background_color='#1c1e23', text_color='white', keep_on_top=True, font='_ 30')
+
+# Diplotype Calculator Functions
+    def diplotype_calc(file_path):
+        data, allele_cols = read_csv_file(file_path)
+        allele_df = pd.DataFrame(data, columns=allele_cols)[['sample ID', 'CYP2D6', 'CYP2C9']]
+        print(allele_df)
+        # Import CPIC dataframe from Google Cloud Storage into pandas dataframe
+        # Currently only supported for CYP2D6 and CYP2C9
+        cpic_data = f'https://storage.googleapis.com/pg-genotyping-cpic-2d6-2d9/2d6_2d9_joined.csv'
+        cpic_df = pd.read_csv(cpic_data)
+
+        # Merge the two DataFrames based on the common columns CYP2D6 and CYP2C9
+        merged_df = pd.merge(allele_df, cpic_df, on=['CYP2D6', 'CYP2C9'])
+
+        # Create two new columns to store the Metabolizer Status and Activity Score
+        merged_df['Metabolizer Status'] = ''
+        merged_df['Activity Score'] = ''
+
+        # Create two dictionaries to store the metabolizer status and activity score for each call
+        d6_status_dict = dict(zip(cpic_df['CYP2D6'], cpic_df['Metabolizer Status']))
+        d9_status_dict = dict(zip(cpic_df['CYP2C9'], cpic_df['Metabolizer Status']))
+        d6_activity_dict = dict(zip(cpic_df['CYP2D6'], cpic_df['Activity Score']))
+        d9_activity_dict = dict(zip(cpic_df['CYP2C9'], cpic_df['Activity Score']))
+
+        # Create two new columns to store the Metabolizer Status and Activity Score
+        allele_df['Metabolizer Status'] = ''
+        allele_df['Activity Score'] = ''
+
+        # Iterate over each row of the allele DataFrame
+        for index, row in allele_df.iterrows():
+            # Get the cyp2d6 and cyp2c9 calls for the current sample ID
+            cyp2d6_call = row['CYP2D6']
+            cyp2c9_call = row['CYP2C9']
+
+            # Use the dictionaries to get the metabolizer status and activity score for the current calls
+            cyp2d6_status = d6_status_dict.get(cyp2d6_call, 'UND')
+            cyp2c9_status = d9_status_dict.get(cyp2c9_call, 'UND')
+            cyp2d6_activity = d6_activity_dict.get(cyp2d6_call, 'UND')
+            cyp2c9_activity = d9_activity_dict.get(cyp2c9_call, 'UND')
+
+            # Use the comparison results to populate the Metabolizer Status and Activity Score columns of the allele DataFrame
+            allele_df.loc[index, 'Metabolizer Status'] = f'2D6: {cyp2d6_status} ||| 2C9: {cyp2c9_status}'
+            allele_df.loc[index, 'Activity Score'] = f'{cyp2d6_activity}, {cyp2c9_activity}'
+
+        # convert all of the updated data back into a list of lists
+        updated_data = allele_df.values.tolist()
+        window['-TABLE-'].update(values=updated_data)
+            # This is a really cheap way of updating the column names
+            # I cannot figure out how to update the headers correctly, so I have it update in a solid status
+        updated_header = ['index', 'sample ID', 'CYP2D6', 'CYP2C9', 'Metabolizer Status', 'Activity Score', '', '', '']
+        for i, col in enumerate(updated_header):
+            window['-TABLE-'].widget.heading(i, text=col)
+        print(updated_data)
 
     # ------ Window Layout ------
     layout = [  [sg.Text('Click a heading to sort on that column or enter a filter and click a heading to search for matches in that column')],
@@ -112,8 +174,9 @@ def csv_window(window, file_path):
                 [sg.Text(k='-RECORDS SHOWN-', font='_ 18')],
                 [sg.Text(k='-SELECTED-')],
                 [sg.T('Filter:'), sg.Input(k='-FILTER-', focus=True, tooltip='Not case sensative\nEnter value and click on a col header'),
-                 sg.B('Reset Table', tooltip='Resets entire table to your original data'),
-                 sg.Checkbox('Sort Descending', k='-DESCENDING-'), sg.Checkbox('Filter Out (exclude)', k='-FILTER OUT-', tooltip='Check to remove matching entries when filtering a column'), sg.Push()],
+                 sg.B('Reset Table', tooltip='Resets entire table to your original data'), sg.Button('Calculate Diplotype', key='-DIPLO-'),
+                 sg.Checkbox('Sort Descending', k='-DESCENDING-'), sg.Checkbox('Filter Out (exclude)', k='-FILTER OUT-', tooltip='Check to remove matching entries when filtering a column'),
+                 sg.Push()],
                 [sg.Table(values=data, headings=header_list, max_col_width=25,
                         auto_size_columns=True, display_row_numbers=True, vertical_scroll_only=True,
                         justification='right', num_rows=50,
@@ -123,7 +186,7 @@ def csv_window(window, file_path):
                 [sg.Sizegrip()]]
 
     # ------ Create Window ------
-    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, size=(800, 600), finalize=True)
+    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, size=(900, 600), finalize=True)
     window.bind("<Control_L><End>", '-CONTROL END-')
     window.bind("<End>", '-CONTROL END-')
     window.bind("<Control_L><Home>", '-CONTROL HOME-')
@@ -140,7 +203,7 @@ def csv_window(window, file_path):
         else:
             window['-SELECTED-'].update('')
         if event[0] == '-TABLE-':
-        # if isinstance(event, tuple):
+        # if is instance(event, tuple):
             filter_value = values['-FILTER-']
             # TABLE CLICKED Event has value in format ('-TABLE=', '+CLICKED+', (row,col))
             if event[0] == '-TABLE-':
@@ -166,6 +229,9 @@ def csv_window(window, file_path):
             data = original_data
             window['-TABLE-'].update(data)
             window['-RECORDS SHOWN-'].update(f'{len(data)} Records shown')
+        elif event == '-DIPLO-' or event == 'calculate':
+            diplotype_calc(file_path)
+            window['-RECORDS SHOWN-'].update(f'{len(data)} Records Shown')
         elif event == '-CONTROL END-':
             window['-TABLE-'].set_vscroll_position(100)
         elif event == '-CONTROL HOME-':
@@ -197,7 +263,7 @@ while True:
         event, values = window.read()
         file_path = values['-FILE_PATH-']
         if file_path:
-            csv_window(window, file_path)
+            csv_window(file_path)
             window.refresh()
 
 
