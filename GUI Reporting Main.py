@@ -39,44 +39,24 @@ def read_csv_file(filename):
         try:
             with open(filename, 'r', newline='', encoding=None) as infile:
                 reader = csv.reader(infile)
-                for i in range(11):
-                    next(reader)  # skip the first 10 rows
-                header_list = next(reader)
+                header_list = []
+                for row in reader:
+                    if any(col in allele_cols for col in row):
+                        header_list = row
+                        break
                 allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
-                data = [[row[i] for i in allele_indices] for row in reader]
-        except Exception:
-            try:
-                with open(filename, 'r', newline='', encoding=None) as infile:
-                    reader = csv.reader(infile)
-                    for i in range(10):
-                        next(reader)
-                    header_list = next(reader)
-                    allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
-                    data = [[row[i] for i in allele_indices] for row in reader]
-            except Exception as e:
-                print(e)
-                sg.popup_error('Error In Reading File', e)
+                data = [[row[i] if i < len(row) else '' for i in allele_indices] for row in reader]
+        except Exception as e:
+            print(e)
+            sg.popup_error('Error In Reading File', e)
+        # Remove empty rows at the beginning of the data list
+        while data and not any(data[0]):
+            data.pop(0)
+        # Update allele_cols to include only columns present in the CSV file
+        allele_cols = [header_list[i] for i in allele_indices]
     return data, allele_cols
 
 #####################################################################################################################
-# This section is a function that can be used to save the dataframe at any given point
-
-def onClick(msg):
-    tkinter.messagebox.showinfo("Precision Genetics", msg)
-
-def save_loc(dataframe):
-    root = tk.Tk()
-    root.withdraw()
-    file_path = filedialog.asksaveasfilename(defaultextension=".csv",
-                                             filetypes=[("CSV Files", "*.csv"),
-                                                        ("All Files", "*.*")])
-    if file_path:
-        try:
-            dataframe.to_csv(file_path, index=False, encoding='utf-8-sig')
-            onClick('File saved successfully')
-        except Exception as e:
-            onClick('An error occurred while saving the file: ' + str(e))
-    root.destroy()
 
 ######################################################################################################################
 # Creating tabs and callbacks for interactive functions
@@ -92,8 +72,9 @@ tab_diplo = [[sg.T('Upload & View AlleleTyper Exports', expand_x=True, expand_y=
 ### Callback function for the 'Submit' button on diplo tab
 
 
-tab_genx = [[sg.T('Convert files for Genxys upload', expand_x=True, expand_y=True)],
-            [sg.Push(), sg.Button('Convert', size=(14, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
+tab_genx = [[sg.Push(), sg.T('Choose Conversion Method', expand_x=True, expand_y=True, justification='center'), sg.Push()],
+            [sg.Push(), sg.Button('Convert for Genxys Upload', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()],
+            [sg.Push(), sg.Button('Convert for Ovation Upload', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
 
 ################################################################################################################
 # Creating main window Layout
@@ -102,7 +83,7 @@ layout = [[sg.Stretch()],
           [sg.TabGroup([
             [sg.Tab('Allele Typer', tab_al_typ)],
             [sg.Tab('Diplotype Calculator', tab_diplo)],
-            [sg.Tab('Genxys File Conversion', tab_genx)]
+            [sg.Tab('File Conversions', tab_genx)]
           ], background_color='#1B2838', tab_location='topleft', expand_x=True, expand_y=True)],
           [sg.Stretch()]]
 
@@ -114,12 +95,25 @@ def csv_window(file_path):
     data, header_list = read_csv_file(file_path)
     print(header_list)
     sg.popup_quick_message('Building your main window.... one moment....', background_color='#1c1e23', text_color='white', keep_on_top=True, font='_ 30')
+    save_loc = None
 
 # Diplotype Calculator Functions
     def diplotype_calc(file_path):
+        nonlocal save_loc
         data, allele_cols = read_csv_file(file_path)
+
+
+        # check which columns are in the csv, and add some if they are not present
+        req_cols = ['sample ID', 'CYP2D6', 'CYP2C9']
+        for col in req_cols:
+            if col not in allele_cols:
+                data.insert(allele_cols.index(allele_cols[-1])+1, [col] + ['' for _ in range(len(data)-2)])
+                allele_cols.insert(allele_cols.index(allele_cols[-1])+1, col)
+
+        updated_header = []
+
         allele_df = pd.DataFrame(data, columns=allele_cols)[['sample ID', 'CYP2D6', 'CYP2C9']]
-        print(allele_df)
+
         # Import CPIC dataframe from Google Cloud Storage into pandas dataframe
         # Currently only supported for CYP2D6 and CYP2C9
         cpic_data = f'https://storage.googleapis.com/pg-genotyping-cpic-2d6-2d9/2d6_2d9_joined.csv'
@@ -139,7 +133,8 @@ def csv_window(file_path):
         d9_activity_dict = dict(zip(cpic_df['CYP2C9'], cpic_df['Activity Score']))
 
         # Create two new columns to store the Metabolizer Status and Activity Score
-        allele_df['Metabolizer Status'] = ''
+        allele_df['2D6 Metabolizer Status'] = ''
+        allele_df['2C9 Metabolizer Status'] = ''
         allele_df['Activity Score'] = ''
 
         # Iterate over each row of the allele DataFrame
@@ -155,18 +150,27 @@ def csv_window(file_path):
             cyp2c9_activity = d9_activity_dict.get(cyp2c9_call, 'UND')
 
             # Use the comparison results to populate the Metabolizer Status and Activity Score columns of the allele DataFrame
-            allele_df.loc[index, 'Metabolizer Status'] = f'2D6: {cyp2d6_status} ||| 2C9: {cyp2c9_status}'
+            allele_df.loc[index, '2D6 Metabolizer Status'] = f'{cyp2d6_status}'
+            allele_df.loc[index, '2C9 Metabolizer Status'] = f'{cyp2c9_status}'
             allele_df.loc[index, 'Activity Score'] = f'{cyp2d6_activity}, {cyp2c9_activity}'
 
         # convert all of the updated data back into a list of lists
         updated_data = allele_df.values.tolist()
+        # for saving the modified dataframe
+        if save_loc:
+            allele_df.to_csv(save_loc, index=False)
+
         window['-TABLE-'].update(values=updated_data)
-            # This is a really cheap way of updating the column names
-            # I cannot figure out how to update the headers correctly, so I have it update in a solid status
-        updated_header = ['index', 'sample ID', 'CYP2D6', 'CYP2C9', 'Metabolizer Status', 'Activity Score', '', '', '']
+
+        ###ToDo: Fix this so it works for alleletyper exports that have fewer columns in initial csv
+        # This is a really cheap way of updating the column names
+        # I cannot figure out how to update the headers correctly, so I have it update in a solid status
+        updated_header = ['index', 'sample ID', 'CYP2D6', 'CYP2C9', '2D6 Metabolizer Status', '2C9 Metabolizer Status',
+                          'Activity Score', '', '']
         for i, col in enumerate(updated_header):
-            window['-TABLE-'].widget.heading(i, text=col)
+            window['-TABLE-'].Widget.heading(i, text=col)
         print(updated_data)
+###ToDo: Column name updates are an absolute mess. Come back and clean it up
 
     # ------ Window Layout ------
     layout = [  [sg.Text('Click a heading to sort on that column or enter a filter and click a heading to search for matches in that column')],
@@ -175,6 +179,7 @@ def csv_window(file_path):
                 [sg.Text(k='-SELECTED-')],
                 [sg.T('Filter:'), sg.Input(k='-FILTER-', focus=True, tooltip='Not case sensative\nEnter value and click on a col header'),
                  sg.B('Reset Table', tooltip='Resets entire table to your original data'), sg.Button('Calculate Diplotype', key='-DIPLO-'),
+                 sg.B('Save Copy', key='-SAVE-'),
                  sg.Checkbox('Sort Descending', k='-DESCENDING-'), sg.Checkbox('Filter Out (exclude)', k='-FILTER OUT-', tooltip='Check to remove matching entries when filtering a column'),
                  sg.Push()],
                 [sg.Table(values=data, headings=header_list, max_col_width=25,
@@ -186,13 +191,14 @@ def csv_window(file_path):
                 [sg.Sizegrip()]]
 
     # ------ Create Window ------
-    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, size=(900, 600), finalize=True)
+    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, size=(1000, 600), finalize=True)
     window.bind("<Control_L><End>", '-CONTROL END-')
     window.bind("<End>", '-CONTROL END-')
     window.bind("<Control_L><Home>", '-CONTROL HOME-')
     window.bind("<Home>", '-CONTROL HOME-')
     original_data = data        # save a copy of the data
     # ------ Event Loop ------
+    ### ToDo: Fix the issues with column sorting. When Pressed, table data resets.
     while True:
         event, values = window.read()
         # print(event, values)
@@ -232,6 +238,11 @@ def csv_window(file_path):
         elif event == '-DIPLO-' or event == 'calculate':
             diplotype_calc(file_path)
             window['-RECORDS SHOWN-'].update(f'{len(data)} Records Shown')
+        elif event == '-SAVE-':
+            save_loc = sg.popup_get_file('Save CSV', save_as=True, default_extension='.csv', file_types=(("CSV Files", "*.csv"),))
+            if save_loc:
+                diplotype_calc(file_path)
+                sg.popup('File Saved Successfully!')
         elif event == '-CONTROL END-':
             window['-TABLE-'].set_vscroll_position(100)
         elif event == '-CONTROL HOME-':
