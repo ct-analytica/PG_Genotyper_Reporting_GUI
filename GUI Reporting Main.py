@@ -45,36 +45,34 @@ def read_csv_file(filename):
                         header_list = row
                         break
                 allele_indices = [header_list.index(col) for col in allele_cols if col in header_list]
+                next(reader)  # move the reader to the next line to read the data
                 data = [[row[i] if i < len(row) else '' for i in allele_indices] for row in reader]
         except Exception as e:
             print(e)
             sg.popup_error('Error In Reading File', e)
-        # Remove empty rows at the beginning of the data list
-        while data and not any(data[0]):
-            data.pop(0)
+        # Reset allele_cols to default value
+        allele_cols = ['sample ID', 'CYP2D6', 'CYP2C9', 'SLCO1B1', 'CYP2B6', 'CYP3A4', 'CYP3A5', 'VKORC1']
         # Update allele_cols to include only columns present in the CSV file
-        allele_cols = [header_list[i] for i in allele_indices]
+        allele_cols = [header_list[i] for i in allele_indices if i < len(header_list)]
+        header_list = [col for col in header_list if col in allele_cols]
     return data, allele_cols
+
 
 #####################################################################################################################
 
 ######################################################################################################################
-# Creating tabs and callbacks for interactive functions
+# Tab Layouts
 
-tab_al_typ = [[sg.T('Proceed to Thermofishers Allele Typer', expand_x=True, expand_y=True)],
-              [sg.T('maybe we can upload genotyper file to fix sample names?')],
+tab_al_typ = [[sg.T('Proceed to Thermofishers Allele Typer', expand_x=True, expand_y=True, justification='center')],
+              [sg.T('This will direct you to ThermoFishers website, in order to complete this step.', justification='center')],
               [sg.Push(), sg.Button('ThermoFisher', size=(14, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
-
-tab_diplo = [[sg.T('Upload & View AlleleTyper Exports', expand_x=True, expand_y=True)],
-             [sg.Push(), sg.InputText(key="-FILE_PATH-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=('CSV Files', '*.csv'))],
-             [sg.Button('Submit', key='-SUBMIT-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
-
-### Callback function for the 'Submit' button on diplo tab
-
-
-tab_genx = [[sg.Push(), sg.T('Choose Conversion Method', expand_x=True, expand_y=True, justification='center'), sg.Push()],
-            [sg.Push(), sg.Button('Convert for Genxys Upload', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()],
-            [sg.Push(), sg.Button('Convert for Ovation Upload', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
+tab_diplo = [[sg.Push(), sg.T('Upload Your AlleleTyper Export.', expand_x=True, expand_y=True)],
+             [sg.Push(), sg.T('You will be able to view, calculate the diplotype, and save a copy of the file.', expand_x=True, expand_y=True)],
+             [sg.Push(), sg.InputText(key="-FILE_PATH-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=('CSV Files', '*.csv')), sg.Push()],
+             [sg.Push(), sg.Button('Submit', key='-SUBMIT-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
+tab_genx = [[sg.Push(), sg.T('Choose Conversion Method For Genxys', expand_x=True, expand_y=True, justification='center'), sg.Push()],
+            [sg.Push(), sg.Button('Conversion For .CNV', key='-GEN-', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()],
+            [sg.Push(), sg.Button('Conversion for .OA', key='-OVA-', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
 
 ################################################################################################################
 # Creating main window Layout
@@ -83,17 +81,16 @@ layout = [[sg.Stretch()],
           [sg.TabGroup([
             [sg.Tab('Allele Typer', tab_al_typ)],
             [sg.Tab('Diplotype Calculator', tab_diplo)],
-            [sg.Tab('File Conversions', tab_genx)]
+            [sg.Tab('Genxys File Conversions', tab_genx)]
           ], background_color='#1B2838', tab_location='topleft', expand_x=True, expand_y=True)],
           [sg.Stretch()]]
 
 window = sg.Window('Reporting Tools', layout, resizable=True, finalize=True)
 
 ##################################################################################################################
-#Creating CSV Table Layout and function
+# Creating CSV Table Layout and function
 def csv_window(file_path):
     data, header_list = read_csv_file(file_path)
-    print(header_list)
     sg.popup_quick_message('Building your main window.... one moment....', background_color='#1c1e23', text_color='white', keep_on_top=True, font='_ 30')
     save_loc = None
 
@@ -110,7 +107,6 @@ def csv_window(file_path):
                 data.insert(allele_cols.index(allele_cols[-1])+1, [col] + ['' for _ in range(len(data)-2)])
                 allele_cols.insert(allele_cols.index(allele_cols[-1])+1, col)
 
-        updated_header = []
 
         allele_df = pd.DataFrame(data, columns=allele_cols)[['sample ID', 'CYP2D6', 'CYP2C9']]
 
@@ -156,21 +152,23 @@ def csv_window(file_path):
 
         # convert all of the updated data back into a list of lists
         updated_data = allele_df.values.tolist()
+
         # for saving the modified dataframe
         if save_loc:
             allele_df.to_csv(save_loc, index=False)
 
-        window['-TABLE-'].update(values=updated_data)
-
-        ###ToDo: Fix this so it works for alleletyper exports that have fewer columns in initial csv
+        ### ToDo: Fix this so it works for alleletyper exports that have fewer initial columns in their csv
+        ### ToDo: Column name updates are an absolute mess. Come back and clean it up
         # This is a really cheap way of updating the column names
         # I cannot figure out how to update the headers correctly, so I have it update in a solid status
         updated_header = ['index', 'sample ID', 'CYP2D6', 'CYP2C9', '2D6 Metabolizer Status', '2C9 Metabolizer Status',
                           'Activity Score', '', '']
+        window['-TABLE-'].update(values=updated_data)
+
         for i, col in enumerate(updated_header):
             window['-TABLE-'].Widget.heading(i, text=col)
-        print(updated_data)
-###ToDo: Column name updates are an absolute mess. Come back and clean it up
+
+
 
     # ------ Window Layout ------
     layout = [  [sg.Text('Click a heading to sort on that column or enter a filter and click a heading to search for matches in that column')],
@@ -256,31 +254,122 @@ def csv_window(file_path):
 
 
 ###############################################################################################################
+# This is the file conversion function for turning the copy caller .txt export to a .cnv file
+def convert_gen():
+    # Creating a file selection window
+    layout = [
+        [sg.Text('Select a file to convert:')],
+        [sg.Input(key='file_path'), sg.FileBrowse()],
+        [sg.Text('Select a folder to save the converted file:')],
+        [sg.Input(key='folder_path'), sg.FolderBrowse()],
+        [sg.Button('Convert', key='CON'), sg.Button('Cancel')]
+    ]
+    window = sg.Window('Convert File', layout)
 
-#Event Loop
+    while True:
+        event, values = window.read()
+        if event in (sg.WIN_CLOSED, 'Cancel'):
+            break
+
+        if event == 'CON':
+            # Get the .txt file path and choose the folder the converted file will be exported to
+            file_path = values['file_path']
+            folder_path = values['folder_path']
+            print(f"File path: {file_path}")
+            print(f"Folder path: {folder_path}")
+            # Checks if file is a .txt file, if not, it will return the error message
+            if not file_path.endswith('.txt'):
+                sg.popup('Invalid file selected. Please choose a .txt file.')
+                continue
+
+            # Convert file
+            new_file_name, old_file_ext = os.path.splitext(os.path.basename(file_path))
+            new_file_path = os.path.join(folder_path, new_file_name + '.cnv')
+            with open(file_path, 'r') as f_in:
+                file_data = f_in.read()
+            # Conversion process
+            converted_data = file_data.replace('.txt', '.cnv')
+            with open(new_file_path, 'w') as f_out:
+                f_out.write(converted_data)
+
+            sg.popup('File converted and saved successfully!')
+            break
+
+    window.close()
+
+###############################################################################################################
+def convert_oa():
+    # Creating a file selection window
+    layout = [
+        [sg.Text('Select a file to convert:')],
+        [sg.Input(key='file_path'), sg.FileBrowse()],
+        [sg.Text('Select a folder to save the converted file:')],
+        [sg.Input(key='folder_path'), sg.FolderBrowse()],
+        [sg.Button('Convert', key='CONOA'), sg.Button('Cancel')]
+    ]
+    window = sg.Window('Convert File', layout)
+
+    while True:
+        event, values = window.read()
+        if event in (sg.WIN_CLOSED, 'Cancel'):
+            break
+
+        if event == 'CONOA':
+            # Get the .txt file path and choose the folder the converted file will be exported to
+            file_path = values['file_path']
+            folder_path = values['folder_path']
+            print(f"File path: {file_path}")
+            print(f"Folder path: {folder_path}")
+            # Checks if file is a .txt file, if not, it will return the error message
+            if not file_path.endswith('.csv'):
+                sg.popup('Invalid file selected. Please choose a .csv file.')
+                continue
+
+            # Convert file
+            new_file_name, old_file_ext = os.path.splitext(os.path.basename(file_path))
+            new_file_path = os.path.join(folder_path, new_file_name + '.oa')
+            with open(file_path, 'r') as f_in:
+                file_data = f_in.read()
+            # Conversion process
+            converted_data = file_data.replace('.csv', '.oa')
+            with open(new_file_path, 'w') as f_out:
+                f_out.write(converted_data)
+
+            sg.popup('File converted and saved successfully!')
+            break
+
+    window.close()
+
+###############################################################################################################
+# Main Event Loop for the GUI
+
 while True:
     event, values = window.read()
-    if event == sg.WIN_CLOSED or event == 'Exit':
+    if event == sg.WIN_CLOSED or event == 'Exit':      # Closes program when needed
         break
 
 
-    elif event == 'ThermoFisher':  #This creates an in program window for ThermoFishers AlleleTyper Software
+    elif event == 'ThermoFisher':  # This creates an in program window for ThermoFishers AlleleTyper Software
         ### Todo: Find a way to implement our own AlleleTyper script and gain independence/distance from Thermo's software
         webview.create_window('Thermofisher', 'https://apps.thermofisher.com/alleletyper')
         webview.start()
 
-
-    elif event == '-SUBMIT-':
+    elif event == '-SUBMIT-':              # This 'Submit' button event is for the Diplotype Calculator Tab
         event, values = window.read()
         file_path = values['-FILE_PATH-']
         if file_path:
             csv_window(file_path)
             window.refresh()
 
-
-    elif event == 'Cancel':
+    elif event == 'Cancel':                 # When 'Cancel' is pressed, it closes the program
         sg.popup('Closing Program')
         exit()
+
+    elif event == '-GEN-':                  # This is For the Genxys file Conversion function on the file conversion tab
+        convert_gen()
+
+    elif event == '-OVA-':
+        convert_oa()
 
 if __name__ == '__main__':
     event, values = window.read()
