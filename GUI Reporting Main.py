@@ -4,6 +4,7 @@ import pandas as pd
 import csv
 import os
 import operator
+import pyperclip
 import tkinter as tk
 from tkinter import filedialog
 import tkinter.messagebox
@@ -59,20 +60,32 @@ def read_csv_file(filename):
 
 
 #####################################################################################################################
-
+# Setting up
 ######################################################################################################################
 # Tab Layouts
 
 tab_al_typ = [[sg.T('Proceed to Thermofishers Allele Typer', expand_x=True, expand_y=True, justification='center')],
-              [sg.T('This will direct you to ThermoFishers website, in order to complete this step.', justification='center')],
+              [sg.Push(), sg.T('This will direct you to ThermoFishers website, in order to complete this step.', justification='center'), sg.Push()],
               [sg.Push(), sg.Button('ThermoFisher', size=(14, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
+
 tab_diplo = [[sg.Push(), sg.T('Upload Your AlleleTyper Export.', expand_x=True, expand_y=True)],
              [sg.Push(), sg.T('You will be able to view, calculate the diplotype, and save a copy of the file.', expand_x=True, expand_y=True)],
              [sg.Push(), sg.InputText(key="-FILE_PATH-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=('CSV Files', '*.csv')), sg.Push()],
              [sg.Push(), sg.Button('Submit', key='-SUBMIT-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
+
+controls = ['NA12878', 'NA18573', 'NA18971', 'NA19143', 'NA19144']
+
+tab_ctrl = [[sg.Push(), sg.T('This tool is used to extract the sections needed to update the Control Batch Log from the Genotyper Export.', expand_x=True, expand_y=True)],
+             [sg.Push(), sg.T('Upload The Genotyper Export', expand_x=True, expand_y=True)],
+             [sg.Push(), sg.T('Please Choose Control Used In Batch.', expand_x=True, expand_y=True)],
+             [sg.Push(), sg.OptionMenu(values=controls, key='-CONTROL-'), sg.Push()],
+             [sg.Push(), sg.T('Information will be copied to your clipboard', expand_x=True, expand_y=True)],
+             [sg.Push(), sg.InputText(key="-GENO_XPORT-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=[('CSV Files', '*.csv'), ('All Files', '*.*')]), sg.Push()],
+             [sg.Push(), sg.Button('Submit', key='-SUBCTRL-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
+
 tab_genx = [[sg.Push(), sg.T('Choose Conversion Method For Genxys', expand_x=True, expand_y=True, justification='center'), sg.Push()],
             [sg.Push(), sg.Button('Conversion For .CNV', key='-GEN-', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()],
-            [sg.Push(), sg.Button('Conversion for .OA', key='-OVA-', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
+            [sg.Push(), sg.Button('Conversion For .OA', key='-OVA-', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()]]
 
 ################################################################################################################
 # Creating main window Layout
@@ -81,6 +94,7 @@ layout = [[sg.Stretch()],
           [sg.TabGroup([
             [sg.Tab('Allele Typer', tab_al_typ)],
             [sg.Tab('Diplotype Calculator', tab_diplo)],
+            [sg.Tab('Batch Control Log', tab_ctrl)],
             [sg.Tab('Genxys File Conversions', tab_genx)]
           ], background_color='#1B2838', tab_location='topleft', expand_x=True, expand_y=True)],
           [sg.Stretch()]]
@@ -251,7 +265,43 @@ def csv_window(file_path):
             sg.popup_scrolled(__file__, sg.get_versions(), location=window.current_location(), keep_on_top=True, non_blocking=True)
     window.close()
 
+##################################################################################################################
+# Creating a function for adding Genotyper Batch control information to clipboard
+# A control is selected from the dropdown menu, and the genotyper export is uploaded
+# The csv then checks the 'Sample Id' column to see if it matches the control that was selected.
+# if everything matches, the specified columns and their cells are copied to the clipboard
+# That data can then be pasted into the Batch Control Log workbook
 
+def submit_ctrl_callback(values):
+    selected_control = values['-CONTROL-']
+    geno_file_path = values['-GENO_XPORT-']
+    if geno_file_path.endswith('.csv'):
+        # here we put the csv file into pandas dataframe
+        df = pd.read_csv(geno_file_path, skiprows=17, skipfooter=1000, engine='python', encoding='ANSI')
+
+        # create a dictionary mapping column names to column indices
+        column_map = {'Sample ID': None, 'Assay Name': None, 'Assay ID': None, 'Gene Symbol': None,
+                      'NCBI SNP Reference': None, 'Plate Barcode': None, 'Call': None}
+        for i, col_name in enumerate(df.columns):
+            if col_name in column_map:
+                column_map[col_name] = i
+
+        # The order we want the extracted data in
+        extracted_data = df[['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference',
+                             'Plate Barcode', 'Call']]
+        for col_name, col_idx in column_map.items():
+            if col_idx is not None and col_name not in extracted_data.columns:
+                extracted_data.insert(loc=col_idx, column=col_name, value=df.iloc[:, col_idx])
+
+        # filter rows that contain the selected control
+        selected_rows = extracted_data[extracted_data['Sample ID'] == selected_control]
+        if len(selected_rows) > 0:
+            pyperclip.copy(selected_rows.to_csv(index=False, sep='\t'))
+            sg.popup('Data Was Copied to Clipboard.')
+        else:
+            sg.popup('No Data Found For Selected Control.')
+    else:
+        sg.popup('Please Select A Valid CSV file.')
 
 ###############################################################################################################
 # This is the file conversion function for turning the copy caller .txt export to a .cnv file
@@ -298,6 +348,7 @@ def convert_gen():
     window.close()
 
 ###############################################################################################################
+# This is the file conversion function for turning the Genotyper results into an .OA File
 def convert_oa():
     # Creating a file selection window
     layout = [
@@ -364,6 +415,9 @@ while True:
     elif event == 'Cancel':                 # When 'Cancel' is pressed, it closes the program
         sg.popup('Closing Program')
         exit()
+
+    elif event == '-SUBCTRL-':
+        submit_ctrl_callback(values)
 
     elif event == '-GEN-':                  # This is For the Genxys file Conversion function on the file conversion tab
         convert_gen()
