@@ -103,8 +103,14 @@ window = sg.Window('Reporting Tools', layout, resizable=True, finalize=True)
 
 #################################################################################################################
 # creating a pop up window for PGx v. NPG in regards to using the Diplotype calculator
-
-
+def npg_popup():
+    npg_layout = [[sg.Push(), sg.Text('Will This Calculation be for NPG or PGX?'), sg.Push()],
+                  [sg.Push(), sg.Radio('NPG', 1), sg.Radio('PGX', 2), sg.Push()],
+                  [sg.Push(), sg.Button('Submit', key='NPGSUB'), sg.Push()]]
+    npg_window = sg.Window('Diplotype Calculator', npg_layout, resizable=True, finalize=True)
+    event, values = npg_window.read()
+    npg_window.close()
+    return values[0]
 ##################################################################################################################
 # Creating CSV Table Layout and function
 def csv_window(file_path):
@@ -279,9 +285,11 @@ def csv_window(file_path):
 def submit_ctrl_callback(values):
     selected_control = values['-CONTROL-']
     geno_file_path = values['-GENO_XPORT-']
-    ctrl_cols = ['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference', 'Plate Barcode', 'Call']
+
 
     if geno_file_path.endswith('.csv'):
+        ctrl_cols = ['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference', 'Plate Barcode',
+                     'Call']
         # here we put the csv file into pandas dataframe
         df = pd.read_csv(geno_file_path, skiprows=17, usecols=ctrl_cols, engine='python', encoding='ANSI')
         print(df)
