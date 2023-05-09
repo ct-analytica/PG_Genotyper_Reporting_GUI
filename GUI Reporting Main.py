@@ -101,6 +101,10 @@ layout = [[sg.Stretch()],
 
 window = sg.Window('Reporting Tools', layout, resizable=True, finalize=True)
 
+#################################################################################################################
+# creating a pop up window for PGx v. NPG in regards to using the Diplotype calculator
+
+
 ##################################################################################################################
 # Creating CSV Table Layout and function
 def csv_window(file_path):
@@ -411,12 +415,17 @@ while True:
         webview.create_window('Thermofisher', 'https://apps.thermofisher.com/alleletyper')
         webview.start()
 
-    elif event == '-SUBMIT-':              # This 'Submit' button event is for the Diplotype Calculator Tab
-        event, values = window.read()
+    elif event == '-SUBMIT-':  # This 'Submit' button event is for the Diplotype Calculator Tab
         file_path = values['-FILE_PATH-']
-        if file_path:
-            csv_window(file_path)
-            window.refresh()
+        is_npg = npg_popup()
+        if is_npg:
+            # here will return the csv window if its NPG
+            sg.popup('NPG function Placeholder')
+        else:
+            # this will return the csv window if its PGx
+            if file_path:
+                csv_window(file_path)
+                window.refresh()
 
     elif event == 'Cancel':                 # When 'Cancel' is pressed, it closes the program
         sg.popup('Closing Program')
