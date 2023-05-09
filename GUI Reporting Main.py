@@ -13,7 +13,7 @@ import tkinter.messagebox
 sg.theme('Dark Blue')
 
 #############################################################################
-# Scripts for working with .CSVs
+# Scripts for working with .CSVs in the diplotype calculator functions
 # This will contain code for creating an interactive window to work with .csv's
 working_directory = os.getcwd()
 csv.field_size_limit(2147483647)   # Allows for tables to be as large as needed
@@ -73,7 +73,7 @@ tab_diplo = [[sg.Push(), sg.T('Upload Your AlleleTyper Export.', expand_x=True, 
              [sg.Push(), sg.InputText(key="-FILE_PATH-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=('CSV Files', '*.csv')), sg.Push()],
              [sg.Push(), sg.Button('Submit', key='-SUBMIT-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
 
-controls = ['NA12878', 'NA18573', 'NA18971', 'NA19143', 'NA19144']
+controls = ['NA12878', 'NA18573', 'NA18971', 'NA19143', 'NA19144']  #These are the controls used in the Control Batch Log
 
 tab_ctrl = [[sg.Push(), sg.T('This tool is used to extract the sections needed to update the Control Batch Log from the Genotyper Export.', expand_x=True, expand_y=True)],
              [sg.Push(), sg.T('Upload The Genotyper Export', expand_x=True, expand_y=True)],
@@ -81,7 +81,7 @@ tab_ctrl = [[sg.Push(), sg.T('This tool is used to extract the sections needed t
              [sg.Push(), sg.OptionMenu(values=controls, key='-CONTROL-'), sg.Push()],
              [sg.Push(), sg.T('Information will be copied to your clipboard', expand_x=True, expand_y=True)],
              [sg.Push(), sg.InputText(key="-GENO_XPORT-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=[('CSV Files', '*.csv'), ('All Files', '*.*')]), sg.Push()],
-             [sg.Push(), sg.Button('Submit', key='-SUBCTRL-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
+             [sg.Push(), sg.Button('Submit', key='-SUBCTRL-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', key='CTRL_CANCEL', button_color=('#000000', '#C2D4D8')), sg.Push()]]
 
 tab_genx = [[sg.Push(), sg.T('Choose Conversion Method For Genxys', expand_x=True, expand_y=True, justification='center'), sg.Push()],
             [sg.Push(), sg.Button('Conversion For .CNV', key='-GEN-', size=(25, 2), button_color=('#000000', '#C2D4D8')), sg.Push()],
@@ -275,10 +275,12 @@ def csv_window(file_path):
 def submit_ctrl_callback(values):
     selected_control = values['-CONTROL-']
     geno_file_path = values['-GENO_XPORT-']
+    ctrl_cols = ['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference', 'Plate Barcode', 'Call']
+
     if geno_file_path.endswith('.csv'):
         # here we put the csv file into pandas dataframe
-        df = pd.read_csv(geno_file_path, skiprows=17, skipfooter=1000, engine='python', encoding='ANSI')
-
+        df = pd.read_csv(geno_file_path, skiprows=17, usecols=ctrl_cols, engine='python', encoding='ANSI')
+        print(df)
         # create a dictionary mapping column names to column indices
         column_map = {'Sample ID': None, 'Assay Name': None, 'Assay ID': None, 'Gene Symbol': None,
                       'NCBI SNP Reference': None, 'Plate Barcode': None, 'Call': None}
@@ -287,16 +289,17 @@ def submit_ctrl_callback(values):
                 column_map[col_name] = i
 
         # The order we want the extracted data in
-        extracted_data = df[['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference',
-                             'Plate Barcode', 'Call']]
+        extracted_data = df.loc[
+            df['Sample ID'] == selected_control, ['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol',
+                                                  'NCBI SNP Reference',
+                                                  'Plate Barcode', 'Call']]
+
         for col_name, col_idx in column_map.items():
             if col_idx is not None and col_name not in extracted_data.columns:
                 extracted_data.insert(loc=col_idx, column=col_name, value=df.iloc[:, col_idx])
 
-        # filter rows that contain the selected control
-        selected_rows = extracted_data[extracted_data['Sample ID'] == selected_control]
-        if len(selected_rows) > 0:
-            pyperclip.copy(selected_rows.to_csv(index=False, sep='\t'))
+        if len(extracted_data) > 0:
+            pyperclip.copy(extracted_data.to_csv(index=False, sep='\t'))
             sg.popup('Data Was Copied to Clipboard.')
         else:
             sg.popup('No Data Found For Selected Control.')
@@ -392,6 +395,9 @@ def convert_oa():
     window.close()
 
 ###############################################################################################################
+# Place Holder
+
+###############################################################################################################
 # Main Event Loop for the GUI
 
 while True:
@@ -418,6 +424,10 @@ while True:
 
     elif event == '-SUBCTRL-':
         submit_ctrl_callback(values)
+
+    elif event == 'CTRL_CANCEL':
+        sg.popup('Closing Program')
+        exit()
 
     elif event == '-GEN-':                  # This is For the Genxys file Conversion function on the file conversion tab
         convert_gen()
