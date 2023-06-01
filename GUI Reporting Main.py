@@ -58,6 +58,28 @@ def read_csv_file(filename):
         header_list = [col for col in header_list if col in allele_cols]
     return data, allele_cols
 
+### This was added once the NPG functionality came into the project
+### Essentially the same csv reader function. The difference is the column names
+def read_npg_file(file_path):
+    with open(file_path, 'r') as file:
+        data = file.readlines()
+
+    header_list = []
+    allele_data = []
+
+    for line_index, line in enumerate(data):
+        if line_index < 11:  # Skip the first 11 rows
+            continue
+        if line.strip() == '':
+            continue
+        if line.startswith('sample ID'):
+            header_list = line.strip().split(',')
+        elif line.startswith('#'):
+            continue
+        else:
+            allele_data.append(line.strip().split(',')[:4])  # Include only the desired columns
+
+    return allele_data, header_list
 
 #####################################################################################################################
 # Setting up
@@ -73,7 +95,7 @@ tab_diplo = [[sg.Push(), sg.T('Upload Your AlleleTyper Export.', expand_x=True, 
              [sg.Push(), sg.InputText(key="-FILE_PATH-"), sg.FileBrowse(initial_folder=os.path.dirname(__file__), file_types=('CSV Files', '*.csv')), sg.Push()],
              [sg.Push(), sg.Button('Submit', key='-SUBMIT-', button_color=('#000000', '#C2D4D8'), bind_return_key=True), sg.Button('Cancel', button_color=('#000000', '#C2D4D8')), sg.Push()]]
 
-controls = ['NA12878', 'NA18573', 'NA18971', 'NA19143', 'NA19144']  #These are the controls used in the Control Batch Log
+controls = ['NA12878', 'NA18573', 'NA18971', 'NA19143', 'NA19144']  # These are the controls used in the Control Batch Log
 
 tab_ctrl = [[sg.Push(), sg.T('This tool is used to extract the sections needed to update the Control Batch Log from the Genotyper Export.', expand_x=True, expand_y=True)],
              [sg.Push(), sg.T('Upload The Genotyper Export', expand_x=True, expand_y=True)],
@@ -275,6 +297,161 @@ def csv_window(file_path):
             sg.popup_scrolled(__file__, sg.get_versions(), location=window.current_location(), keep_on_top=True, non_blocking=True)
     window.close()
 
+
+##################################################################################################################
+# Creating a csv table layout and its functions for NPG
+def npg_window(file_path):                   ### MAKE FOR NPG
+    data, header_list = read_npg_file(file_path)
+    sg.popup_quick_message('Building your main window.... one moment....', background_color='#1c1e23', text_color='white', keep_on_top=True, font='_ 30')
+    save_loc = None
+
+# Diplotype Calculator Functions
+    def npg_calc(file_path):
+        nonlocal save_loc
+        data, allele_cols = read_npg_file(file_path)
+
+        # Include only the desired columns
+        desired_cols = ['sample ID', 'CYP2D6', 'CYP2C9', 'CYP2C19']
+        column_indices = [allele_cols.index(col) for col in desired_cols]
+        allele_data = [[row[i] for i in column_indices] for row in data]
+
+        allele_df = pd.DataFrame(allele_data, columns=desired_cols)
+
+        # Rename the columns in allele_df to match the column names in cpic_df
+        allele_df.rename(columns={'sample ID': 'Sample ID'}, inplace=True)
+
+        # Currently only supported for CYP2D6 and CYP2C9
+        cpic_data = 'https://storage.googleapis.com/pg-genotyping-cpic-2d6-2d9/NPG%20Diplotype%20CPIC%20Tables.csv'
+        cpic_df = pd.read_csv(cpic_data)
+
+        # New DataFrame to put all new data
+        manipulated_df = pd.DataFrame(columns=['Sample', 'Assay ID', 'Call', 'Diplotype'])
+
+        # Iterate over each row of allele_df
+        for _, row in allele_df.iterrows():
+            sample_id = row['Sample ID']
+            cyp2d6_call = row['CYP2D6']
+            cyp2c9_call = row['CYP2C9']
+            cyp2c19_call = row['CYP2C19']
+
+
+            d6_stat_dict = dict(zip(cpic_df['CYP2D6'], cpic_df['Metabolizer Status']))
+            c9_stat_dict = dict(zip(cpic_df['CYP2C9'], cpic_df['Metabolizer Status']))
+            c19_stat_dict = dict(zip(cpic_df['CYP2C19'], cpic_df['Metabolizer Status']))
+
+            # Get the corresponding metabolizer status from cpic_df based on the calls
+            cyp2d6_metabolizer_status = d6_stat_dict.get(cyp2d6_call, 'UND')
+            cyp2c9_metabolizer_status = c9_stat_dict.get(cyp2c9_call, 'UND')
+            cyp2c19_metabolizer_status = c19_stat_dict.get(cyp2c19_call, 'UND')
+
+            # Append rows to the manipulated DataFrame for each gene
+            manipulated_df = manipulated_df.append(
+                {'Sample': sample_id, 'Assay ID': '2D6', 'Call': cyp2d6_metabolizer_status, 'Diplotype': cyp2d6_call},
+                ignore_index=True)
+            manipulated_df = manipulated_df.append(
+                {'Sample': sample_id, 'Assay ID': '2C9', 'Call': cyp2c9_metabolizer_status, 'Diplotype': cyp2c9_call},
+                ignore_index=True)
+            manipulated_df = manipulated_df.append(
+                {'Sample': sample_id, 'Assay ID': '2C19', 'Call': cyp2c19_metabolizer_status, 'Diplotype': cyp2c19_call},
+                ignore_index=True)
+
+        # Convert the manipulated DataFrame back to a list of lists
+        manipulated_data = manipulated_df[['Sample', 'Assay ID', 'Call', 'Diplotype']].values.tolist()
+
+        # Update the table with the manipulated data
+        window['-TABLE-'].update(values=manipulated_data)
+
+        # Update the column names
+        updated_header = ['Sample', 'Assay ID', 'Call', 'Diplotype']
+        for i, col in enumerate(updated_header):
+            window['-TABLE-'].Widget.heading(i+1, text=col)
+
+        data = manipulated_data
+
+
+
+
+    # ------ Window Layout ------
+    layout = [  [sg.Text('Click a heading to sort on that column or enter a filter and click a heading to search for matches in that column')],
+                [sg.Text(f'{len(data)} Records in table', font='_ 18')],
+                [sg.Text(k='-RECORDS SHOWN-', font='_ 18')],
+                [sg.Text(k='-SELECTED-')],
+                [sg.T('Filter:'), sg.Input(k='-FILTER-', focus=True, tooltip='Not case sensative\nEnter value and click on a col header'),
+                 sg.B('Reset Table', tooltip='Resets entire table to your original data'), sg.Button('Calculate Diplotype', key='-NDIPLO-'),
+                 sg.B('Save Copy', key='-SAVE-'),
+                 sg.Checkbox('Sort Descending', k='-DESCENDING-'), sg.Checkbox('Filter Out (exclude)', k='-FILTER OUT-', tooltip='Check to remove matching entries when filtering a column'),
+                 sg.Push()],
+                [sg.Table(values=data, headings=header_list, max_col_width=25,
+                        auto_size_columns=True, display_row_numbers=True, vertical_scroll_only=True,
+                        justification='right', num_rows=50,
+                        key='-TABLE-', selected_row_colors='red on yellow', enable_events=True,
+                        expand_x=True, expand_y=True,
+                        enable_click_events=True)],
+                [sg.Sizegrip()]]
+
+    # ------ Create Window ------
+    window = sg.Window('CSV Table Display', layout, right_click_menu=sg.MENU_RIGHT_CLICK_EDITME_VER_EXIT,  resizable=True, size=(1000, 600), finalize=True)
+    window.bind("<Control_L><End>", '-CONTROL END-')
+    window.bind("<End>", '-CONTROL END-')
+    window.bind("<Control_L><Home>", '-CONTROL HOME-')
+    window.bind("<Home>", '-CONTROL HOME-')
+    original_data = data        # save a copy of the data
+    # ------ Event Loop ------
+    ### ToDo: Fix the issues with column sorting. When Pressed, table data resets.
+    while True:
+        event, values = window.read()
+        # print(event, values)
+        if event in (sg.WIN_CLOSED, 'Exit'):
+            break
+        if values['-TABLE-']:           # Show how many rows are slected
+            window['-SELECTED-'].update(f'{len(values["-TABLE-"])} rows selected')
+        else:
+            window['-SELECTED-'].update('')
+        if event[0] == '-TABLE-':
+        # if is instance(event, tuple):
+            filter_value = values['-FILTER-']
+            # TABLE CLICKED Event has value in format ('-TABLE=', '+CLICKED+', (row,col))
+            if event[0] == '-TABLE-':
+                if event[2][0] == -1 and event[2][1] != -1:  # Header was clicked and wasn't the "row" column
+                    col_num_clicked = event[2][1]
+                    # if there's a filter, first filter based on the column clicked
+                    if filter_value not in (None, ''):
+                        filter_out = values['-FILTER OUT-']     # get bool filter out setting
+                        new_data = []
+                        for line in data:
+                            if not filter_out and (filter_value.lower() in line[col_num_clicked].lower()):
+                                new_data.append(line)
+                            elif filter_out and (filter_value.lower() not in line[col_num_clicked].lower()):
+                                new_data.append(line)
+                        data = new_data
+                    new_table = sort_table(data, (col_num_clicked, 0), values['-DESCENDING-'])
+                    window['-TABLE-'].update(new_table)
+                    data = new_table
+                    window['-RECORDS SHOWN-'].update(f'{len(new_table)} Records shown')
+                    window['-FILTER-'].update('')           # once used, clear the filter
+                    window['-FILTER OUT-'].update(False)  # Also clear the filter out flag
+        elif event == 'Reset Table':
+            data = original_data
+            window['-TABLE-'].update(data)
+            window['-RECORDS SHOWN-'].update(f'{len(data)} Records shown')
+        elif event == '-NDIPLO-' or event == 'calculate':
+            npg_calc(file_path)
+            window['-RECORDS SHOWN-'].update(f'{len(data)} Records Shown')
+        elif event == '-SAVE-':
+            save_loc = sg.popup_get_file('Save CSV', save_as=True, default_extension='.csv', file_types=(("CSV Files", "*.csv"),))
+            if save_loc:
+                npg_calc(file_path)
+                sg.popup('File Saved Successfully!')
+        elif event == '-CONTROL END-':
+            window['-TABLE-'].set_vscroll_position(100)
+        elif event == '-CONTROL HOME-':
+            window['-TABLE-'].set_vscroll_position(0)
+        elif event == 'Edit Me':
+            sg.execute_editor(__file__)
+        elif event == 'Version':
+            sg.popup_scrolled(__file__, sg.get_versions(), location=window.current_location(), keep_on_top=True, non_blocking=True)
+    window.close()
+
 ##################################################################################################################
 # Creating a function for adding Genotyper Batch control information to clipboard
 # A control is selected from the dropdown menu, and the genotyper export is uploaded
@@ -285,11 +462,11 @@ def csv_window(file_path):
 def submit_ctrl_callback(values):
     selected_control = values['-CONTROL-']
     geno_file_path = values['-GENO_XPORT-']
-
+    ctrl_cols = ['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference', 'Plate Barcode',
+                 'Call']
 
     if geno_file_path.endswith('.csv'):
-        ctrl_cols = ['Sample ID', 'Assay Name', 'Assay ID', 'Gene Symbol', 'NCBI SNP Reference', 'Plate Barcode',
-                     'Call']
+
         # here we put the csv file into pandas dataframe
         df = pd.read_csv(geno_file_path, skiprows=17, usecols=ctrl_cols, engine='python', encoding='ANSI')
         print(df)
@@ -419,7 +596,7 @@ while True:
 
 
     elif event == 'ThermoFisher':  # This creates an in program window for ThermoFishers AlleleTyper Software
-        ### Todo: Find a way to implement our own AlleleTyper script and gain independence/distance from Thermo's software
+        #Find a way to implement our own AlleleTyper script and gain independence/distance from Thermo's software
         webview.create_window('Thermofisher', 'https://apps.thermofisher.com/alleletyper')
         webview.start()
 
@@ -428,7 +605,9 @@ while True:
         is_npg = npg_popup()
         if is_npg:
             # here will return the csv window if its NPG
-            sg.popup('NPG function Placeholder')
+            if file_path:
+                npg_window(file_path)
+                window.refresh()
         else:
             # this will return the csv window if its PGx
             if file_path:
